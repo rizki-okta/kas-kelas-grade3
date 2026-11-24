@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Class Fund – Monthly Financial Report Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{--blue:#e6f0fa;--blue2:#6f9dcf;--cream:#fdf8ee;--green:#5fa77a;--red:#c9695f;--ink:#2b3a4a;--mut:#6b7a8a;--line:#dde6ef}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--cream);color:var(--ink)}
+header{background:var(--blue);padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0}nav{display:flex;gap:6px;flex-wrap:wrap}
+button,select,input,textarea{font:inherit;color:inherit}
+nav button{border:0;background:#fff;border-radius:20px;padding:6px 14px;cursor:pointer}nav button.on{background:var(--blue2);color:#fff}
+main{max-width:1050px;margin:auto;padding:16px}section{display:none}section.on{display:block}
+.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px #0001}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.kpi small{color:var(--mut)}.kpi b{display:block;font-size:22px}.pos{color:var(--green)}.neg{color:var(--red)}
+.btn{background:var(--blue2);color:#fff;border:0;border-radius:10px;padding:8px 14px;cursor:pointer}.btn.g{background:var(--green)}.btn.l{background:var(--blue);color:var(--ink)}
+.btn.big{font-size:16px;font-weight:700;padding:12px 22px;background:var(--green)}
+input,select,textarea{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;max-width:100%}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:10px}.row label{display:flex;flex-direction:column;font-size:13px;color:var(--mut)}
+table{border-collapse:collapse;width:100%}th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}th{background:var(--blue);font-size:13px}td.n,th.n{text-align:right;white-space:nowrap}
+.wrap{overflow-x:auto}.warn{background:#fff4d6;border-left:4px solid #e0b030;padding:8px 12px;border-radius:8px;margin:6px 0}.err{background:#fde6e3;border-left:4px solid var(--red);padding:8px 12px;border-radius:8px;margin:6px 0}.okb{background:#e5f4ea;border-left:4px solid var(--green);padding:8px 12px;border-radius:8px;margin:6px 0}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 16px;border-radius:20px;display:none;z-index:9}
+.status{font-size:13px;color:var(--mut);margin-bottom:10px}th.s{cursor:pointer}details{margin:6px 0}
+#repOut h2{margin:0}#repOut h3{margin:16px 0 6px;color:var(--blue2)}dialog{border:0;border-radius:16px;max-width:92vw}
+@media print{@page{size:A4;margin:14mm}body *{visibility:hidden}#repOut,#repOut *{visibility:visible}#repOut{position:absolute;left:0;top:0;width:100%;box-shadow:none}}
+</style></head><body>
+<header><h1>🐘 Class Fund – Financial Reports</h1>
+<nav><button data-t="dash" class="on">Dashboard</button><button data-t="tx">Transactions</button><button data-t="rep">Monthly Reports</button><button data-t="set">Settings</button></nav></header>
+<main>
+<div class="status" id="status"></div>
+<section id="dash" class="on">
+ <div class="grid" id="kpis"></div><div class="card" style="margin-top:14px"><b>Monthly income vs. expenses</b><canvas id="c1" height="110"></canvas></div>
+ <div class="card"><b>Monthly closing balance trend</b><canvas id="c2" height="110"></canvas></div>
+ <div class="card"><b>Recent transactions</b><div class="wrap" id="recent"></div></div>
+</section>
+<section id="tx">
+ <div class="card"><div class="row"><label>Search<input id="q" placeholder="Search description…"></label>
+ <label>Month<select id="fm"></select></label><label>Type<select id="ft"><option value="">All</option><option value="income">Income</option><option value="expense">Expense</option><option value="carry">Carried-over</option></select></label>
+ <button class="btn l" id="dlcsv">Download ledger CSV</button></div><div class="wrap" id="txt"></div></div>
+ <div class="card"><b>Add a new entry</b><p class="status">Entries are kept in this browser only. Download the ledger CSV to copy them into your spreadsheet. The Google Sheet is never modified.</p>
+ <div class="row"><label>Date<input type="date" id="ad"></label><label>Type<select id="at"><option value="credit">Income</option><option value="debit">Expense</option></select></label>
+ <label>Description<input id="ads" size="30"></label><label>Amount (IDR)<input id="aa" type="number" min="0" step="1"></label><label>Notes<input id="an"></label><button class="btn g" id="addb">Add entry</button></div></div>
+</section>
+<section id="rep">
+ <div class="card"><div class="row"><label>Class name<input id="cn"></label><label>Treasurer<input id="tn"></label><label>Month<select id="rm"></select></label><label>Year<select id="ry"></select></label>
+ <button class="btn big" id="gen">GENERATE MONTHLY REPORT</button></div><div id="vs"></div></div>
+ <div id="repBox" style="display:none"><div class="row"><button class="btn" id="bpdf">Download PDF</button><button class="btn" id="bxl">Export Excel</button><button class="btn l" id="bpr">Print Report</button><button class="btn g" id="bwa">Copy WhatsApp Summary</button></div>
+ <div class="card" id="repOut"></div><div class="card"><b>WhatsApp message</b><textarea id="wa" rows="10" style="width:100%"></textarea></div></div>
+</section>
+<section id="set">
+ <div class="card"><b>Data source – Method A: Google Sheets (read-only)</b>
+ <div class="row"><label style="flex:1">Published CSV URL<input id="url" placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?output=csv"></label><button class="btn" id="save">Save &amp; Refresh Data</button></div>
+ <details><summary>How to connect safely</summary><ol><li>Open the sheet → File → Share → Publish to web.</li><li>Choose the <b>LAPORAN BULANAN</b> tab and format <b>CSV</b>, then Publish.</li><li>Paste the link above. Only the published tab is exposed; no keys or passwords are used and the sheet is never edited.</li><li>Do not publish the student roster tab.</li></ol></details></div>
+ <div class="card"><b>Method B: Upload a file</b><div class="row"><label>Excel (.xlsx), .ods or CSV<input type="file" id="file" accept=".xlsx,.xls,.ods,.csv"></label></div>
+ <p class="status">A new upload replaces the previously imported data. Preview and import errors appear below.</p><div id="prev"></div></div>
+ <div class="card"><b>Preferences</b><div class="row"><label>Balance before the first transaction (IDR)<input id="sb" type="number" step="1"></label>
+ <label style="flex-direction:row;gap:6px;align-items:center"><input type="checkbox" id="hn"> Hide student/family names in descriptions</label><button class="btn" id="prefs">Save preferences</button></div>
+ <details><summary>Monthly routine</summary><ol><li>Add the month's entries to your sheet (or use "Add a new entry" and download the ledger CSV).</li><li>Click Refresh Data (or re-upload the file).</li><li>Monthly Reports → choose month → Generate → PDF / Excel / WhatsApp.</li></ol>
+ <p>Sheet format: blocks with the header row <code>Date | Credit | Debit | Transaction Details | Notes</code>. Credits labelled "Remaining Balance" are treated as carried-over funds and added to the Opening Balance.</p></details></div>
+</section></main>
+<dialog id="dlg"></dialog><div id="toast"></div>
+<script>
+/*CORE*/
+let T=[],raw=[],dups=[],bad=[],checks=[],startBal=0,hideNames=false;
+const MI={jan:0,feb:1,mar:2,apr:3,mei:4,may:4,jun:5,jul:6,agu:7,agt:7,aug:7,sep:8,okt:9,oct:9,nov:10,des:11,dec:11};
+const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const okd=(y,m,d)=>{const t=new Date(y,m-1,d);return t.getFullYear()==y&&t.getMonth()==m-1&&t.getDate()==d?[y,m,d]:null};
+function pDate(v){
+ if(v instanceof Date&&!isNaN(v)){v=new Date(v.getTime()+432e5);return [v.getFullYear(),v.getMonth()+1,v.getDate()]}
+ if(typeof v!=='string')return null;v=v.trim();let m;
+ if(m=v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return okd(+m[1],+m[2],+m[3]);
+ if(m=v.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/))return okd(+m[3],+m[2],+m[1]);
+ if(m=v.match(/^(\d{1,2})[\s\-\/]([A-Za-z]+)\.?[\s\-\/,]*(\d{4})$/)){const mo=MI[m[2].slice(0,3).toLowerCase()];if(mo!=null)return okd(+m[3],mo+1,+m[1])}
+ return null}
+function pAmt(v){
+ if(v==null)return 0;if(typeof v==='number')return v;
+ let s=String(v).trim().replace(/rp\.?|idr|\s/ig,'');if(s===''||s==='-'||s==='–')return 0;
+ const neg=/^\(.*\)$|^-/.test(s);s=s.replace(/[()\-]/g,'');
+ if(/^\d{1,3}([.,]\d{3})+$/.test(s))s=s.replace(/[.,]/g,'');
+ else if(/^\d{1,3}(\.\d{3})+,\d{1,2}$/.test(s))s=s.replace(/\./g,'').replace(',','.');
+ else if(/^\d+,\d{1,2}$/.test(s))s=s.replace(',','.');else s=s.replace(/,/g,'');
+ if(!/^\d+(\.\d+)?$/.test(s))return NaN;return neg?-parseFloat(s):parseFloat(s)}
+const pad=n=>String(n).padStart(2,'0');
+function parseRows(rows){
+ const out={txs:[],bad:[],checks:[],found:false};let hd=null,run=0;
+ rows.forEach((r,i)=>{
+  const c=(r||[]).map(x=>x==null?'':x),low=c.map(x=>String(x).trim().toLowerCase());
+  const di=low.indexOf('date'),ci=low.indexOf('credit'),ei=low.indexOf('debit');
+  if(di>=0&&ci>=0&&ei>=0){hd={di,ci,ei,ti:low.findIndex(x=>/details|description/.test(x)),ni:low.indexOf('notes')};out.found=true;return}
+  if(!hd)return;
+  if(low.some(x=>/^monthly tracker/.test(x))){hd=null;return}
+  const first=low.find(x=>x!=='');if(first===undefined)return;
+  if(first==='total'){const dv=pAmt(c[hd.ci]);if(!isNaN(dv)&&dv!==0)out.checks.push({row:i+1,declared:dv,computed:run});return}
+  const dt=c[hd.di],cr=pAmt(c[hd.ci]),db=pAmt(c[hd.ei]),desc=String(hd.ti>=0?c[hd.ti]:'').trim();
+  if(dt===''&&!cr&&!db)return;
+  const d=pDate(dt);let why='';
+  if(!d)why='Invalid date';else if(isNaN(cr)||isNaN(db))why='Invalid amount';else if(cr&&db)why='Both credit and debit filled';else if(!cr&&!db)why='No amount';
+  if(why){out.bad.push({row:i+1,why,desc,date:String(dt)});return}
+  run+=cr-db;
+  out.txs.push({date:d[0]+'-'+pad(d[1])+'-'+pad(d[2]),y:d[0],m:d[1],credit:cr,debit:db,desc,notes:String(hd.ni>=0?c[hd.ni]:'').trim(),src:'import'})});
+ return out}
+function classify(t){const d=t.desc.toLowerCase();
+ if(t.credit&&/remaining balance|carry.?over|saldo awal|sisa kas/.test(d))return{kind:'carry',cat:'Carried-over Balance'};
+ if(t.credit){return{kind:'income',cat:/interest|bunga/.test(d)?'Bank Interest':/parent|contribution|iuran/.test(d)?'Parent Contributions':'Other Income'}}
+ return{kind:'expense',cat:/tax|pajak/.test(d)?'Interest Tax':/fee|admin/.test(d)?'Bank Fees':/tanda kasih|hadiah|gift|kado/.test(d)?'Goodwill Gifts':'Other Expenses'}}
+function rebuild(manual){const seen=new Set();T=[];dups=[];
+ [...raw,...manual].forEach(t=>{const k=[t.date,t.desc.trim().toLowerCase(),t.credit,t.debit].join('|');
+  if(seen.has(k)){dups.push(t);return}seen.add(k);T.push({...t,...classify(t)})});
+ T.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)}
+const grp=a=>{const o={};a.forEach(t=>{const v=t.credit||t.debit;(o[t.cat]=o[t.cat]||{n:0,s:0});o[t.cat].n++;o[t.cat].s+=v});return Object.entries(o).map(([k,v])=>({cat:k,n:v.n,s:v.s})).sort((a,b)=>b.s-a.s)};
+function calc(y,m){const key=y*12+m;let open=startBal,carry=0;const inc=[],exp=[];
+ T.forEach(t=>{const k=t.y*12+t.m;if(k<key)open+=t.credit-t.debit;else if(k===key){if(t.kind==='carry')carry+=t.credit;else(t.kind==='income'?inc:exp).push(t)}});
+ const ti=inc.reduce((s,t)=>s+t.credit,0),te=exp.reduce((s,t)=>s+t.debit,0),op=open+carry;
+ return{y,m,open:op,carry,inc,exp,ti,te,close:op+ti-te,gi:grp(inc),ge:grp(exp)}}
+/*ENDCORE*/
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const LS={g:(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},s:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const R=n=>(n<0?'-':'')+'Rp '+Math.abs(Math.round(n)).toLocaleString('en-US');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dsc=t=>hideNames?t.desc.replace(/(untuk\s+)[^:]+(:)/i,'$1(name hidden)$2'):t.desc;
+const per=(y,m)=>MN[m-1]+' '+y;
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2600)}
+const manual=()=>LS.g('fund_entries',[]);
+function tabs(){$$('nav button').forEach(b=>b.onclick=()=>{$$('nav button').forEach(x=>x.classList.toggle('on',x===b));$$('section').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t))})}
+/* ---------- loading ---------- */
+function csv(text){const rows=[];let r=[],f='',q=false;for(let i=0;i<text.length;i++){const c=text[i];
+ if(q){if(c=='"'){if(text[i+1]=='"'){f+='"';i++}else q=false}else f+=c}
+ else if(c=='"')q=true;else if(c==',')r.push(f),f='';else if(c=='\n'){r.push(f);rows.push(r);r=[];f=''}else if(c!='\r')f+=c}
+ r.push(f);rows.push(r);return rows}
+function ingest(sets,label){let pick=null;
+ for(const [n,rows] of sets){const p=parseRows(rows);if(p.found&&(!pick||/laporan/i.test(n)&&!/laporan/i.test(pick.n)))pick={...p,n}}
+ if(!pick){$('#prev').innerHTML='<div class="err">No table with the columns Date, Credit and Debit was found. Please check the column headers.</div>';return false}
+ raw=pick.txs;bad=pick.bad;checks=pick.checks;
+ if(!raw.length&&!manual().length){$('#prev').innerHTML='<div class="err">The data source is empty: no valid transactions found.</div>';return false}
+ LS.s('fund_src',{label:label+(sets.length>1?' – tab "'+pick.n+'"':''),at:new Date().toLocaleString('en-GB')});
+ rebuild(manual());preview();renderAll();return true}
+async function fromUrl(u){try{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);
+ if(ingest([['csv',csv(await r.text())]],'Google Sheets (published CSV)'))toast('Data refreshed')}catch(e){$('#prev').innerHTML='<div class="err">Could not load the Google Sheet: '+esc(e.message)+'. Make sure the tab is published as CSV.</div>'}}
+async function fromFile(f){try{let sets;
+ if(/\.csv$/i.test(f.name))sets=[['csv',csv(await f.text())]];
+ else{const wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true});sets=wb.SheetNames.map(n=>[n,XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:''})])}
+ if(ingest(sets,'File: '+f.name))toast('File imported')}catch(e){$('#prev').innerHTML='<div class="err">Could not read the file: '+esc(e.message)+'</div>'}}
+function preview(){let h='<div class="okb">'+raw.length+' valid transactions imported'+(bad.length?', '+bad.length+' excluded for review':'')+(dups.length?', '+dups.length+' possible duplicates excluded':'')+'.</div>';
+ h+='<div class="wrap"><table><tr><th>Date</th><th>Description</th><th class="n">Credit</th><th class="n">Debit</th></tr>'+raw.slice(0,8).map(t=>`<tr><td>${t.date}</td><td>${esc(dsc(t))}</td><td class="n">${t.credit?R(t.credit):''}</td><td class="n">${t.debit?R(t.debit):''}</td></tr>`).join('')+'</table></div>';
+ if(bad.length)h+='<div class="err"><b>Rows excluded:</b><br>'+bad.map(b=>`Row ${b.row}: ${b.why} (${esc(b.date||b.desc)})`).join('<br>')+'</div>';
+ $('#prev').innerHTML=h}
+/* ---------- render ---------- */
+let ch=[];
+function renderAll(){
+ const s=LS.g('fund_src',null);$('#status').textContent=s?'Data source: '+s.label+' · Last refresh: '+s.at+(manual().length?' · '+manual().length+' manual entries':''):'No data loaded yet. Go to Settings to connect Google Sheets or upload a file.';
+ const inc=T.filter(t=>t.kind==='income'),exp=T.filter(t=>t.kind==='expense'),carry=T.filter(t=>t.kind==='carry');
+ const ti=inc.reduce((a,t)=>a+t.credit,0),te=exp.reduce((a,t)=>a+t.debit,0),cb=carry.reduce((a,t)=>a+t.credit,0),bal=startBal+cb+ti-te;
+ const k=(l,v,x,c)=>`<div class="card kpi"><small>${l}</small><b class="${c||''}">${R(v)}</b><small>${x}</small></div>`;
+ $('#kpis').innerHTML=k('Total Income',ti,'Excludes carried-over funds','pos')+k('Total Expenses',te,'All periods','neg')+k('Current Balance',bal,'Includes '+R(cb+startBal)+' carried over')+k('Net Cash Flow',ti-te,'Income minus expenses',ti-te>=0?'pos':'neg');
+ $('#recent').innerHTML=table(T.slice(-8).reverse());
+ ch.forEach(c=>c.destroy());ch=[];
+ if(T.length){const a=T[0],z=T[T.length-1],L=[],I=[],E=[],B=[];let y=a.y,m=a.m;
+  while(y*12+m<=z.y*12+z.m){const r=calc(y,m);L.push(MN[m-1].slice(0,3)+' '+y);I.push(r.ti);E.push(r.te);B.push(r.close);m++;if(m>12){m=1;y++}}
+  ch.push(new Chart($('#c1'),{type:'bar',data:{labels:L,datasets:[{label:'Income',data:I,backgroundColor:'#7fbf9a'},{label:'Expenses',data:E,backgroundColor:'#e39a92'}]}}));
+  ch.push(new Chart($('#c2'),{type:'line',data:{labels:L,datasets:[{label:'Closing balance',data:B,borderColor:'#6f9dcf',backgroundColor:'#6f9dcf33',fill:true,tension:.25}]}}))}
+ const ms=[...new Set(T.map(t=>t.date.slice(0,7)))];
+ $('#fm').innerHTML='<option value="">All months</option>'+ms.map(x=>`<option value="${x}">${MN[+x.slice(5)-1]} ${x.slice(0,4)}</option>`).join('');
+ const ys=[...new Set([...T.map(t=>t.y),new Date().getFullYear()])].sort(),sp=LS.g('fund_period',null)||(T.length?[T[T.length-1].y,T[T.length-1].m]:[new Date().getFullYear(),new Date().getMonth()+1]);
+ $('#ry').innerHTML=ys.map(y=>`<option ${y==sp[0]?'selected':''}>${y}</option>`).join('');
+ $('#rm').innerHTML=MN.map((n,i)=>`<option value="${i+1}" ${i+1==sp[1]?'selected':''}>${n}</option>`).join('');
+ txList()}
+const tl={income:'Income',expense:'Expense',carry:'Carried-over'};
+function table(a){return '<table><tr><th>Date</th><th>Description</th><th>Category</th><th>Type</th><th class="n">Amount</th></tr>'+a.map(t=>`<tr data-id="${T.indexOf(t)}" style="cursor:pointer"><td>${t.date}</td><td>${esc(dsc(t))}</td><td>${t.cat}</td><td>${tl[t.kind]}</td><td class="n ${t.credit?'pos':'neg'}">${R(t.credit||t.debit)}</td></tr>`).join('')+'</table>'}
+let asc=false;
+function txList(){const q=$('#q').value.toLowerCase(),m=$('#fm').value,ty=$('#ft').value;
+ let a=T.filter(t=>(!m||t.date.startsWith(m))&&(!ty||t.kind===ty)&&(!q||(t.desc+t.cat).toLowerCase().includes(q)));if(!asc)a=a.slice().reverse();
+ $('#txt').innerHTML=table(a).replace('<th>Date</th>','<th class="s" id="sd">Date '+(asc?'▲':'▼')+'</th>');
+ $('#sd').onclick=()=>{asc=!asc;txList()};$$('#txt tr[data-id]').forEach(r=>r.onclick=()=>detail(T[+r.dataset.id]))}
+function detail(t){const d=$('#dlg');d.innerHTML=`<h3>Transaction details</h3><p><b>Date:</b> ${t.date}<br><b>Description:</b> ${esc(dsc(t))}<br><b>Category:</b> ${t.cat}<br><b>Type:</b> ${tl[t.kind]}<br><b>Amount:</b> ${R(t.credit||t.debit)}<br><b>Notes:</b> ${esc(t.notes||'-')}<br><b>Source:</b> ${t.src==='manual'?'Manual entry':'Imported'}</p>${t.src==='manual'?'<button class="btn l" id="del">Delete entry</button> ':''}<button class="btn" id="cl">Close</button>`;d.showModal();$('#cl').onclick=()=>d.close();
+ if($('#del'))$('#del').onclick=()=>{LS.s('fund_entries',manual().filter(e=>e.id!==t.id));rebuild(manual());renderAll();d.close()}}
+/* ---------- reports ---------- */
+function vsum(y,m){let h='',block=false;const first=T[0];
+ if(!T.length){return{h:'<div class="err">No data loaded. Connect Google Sheets or upload a file first.</div>',block:true}}
+ if(y*12+m<first.y*12+first.m){return{h:`<div class="err">The earliest transaction is in ${per(first.y,first.m)}. The opening balance for ${per(y,m)} cannot be determined, so no report was generated.</div>`,block:true}}
+ h+=`<div class="okb"><b>Data validation summary:</b> ${T.length} valid transactions used · ${bad.length} excluded (invalid) · ${dups.length} possible duplicates excluded.</div>`;
+ if(bad.length)h+='<div class="warn">Invalid rows were excluded and need review (see Settings → preview).</div>';
+ if(dups.length)h+='<div class="warn">Possible duplicate transactions were ignored: '+dups.slice(0,3).map(d=>esc(d.date+' '+d.desc)).join('; ')+'</div>';
+ const mm=checks.filter(c=>Math.abs(c.declared-c.computed)>.5);
+ if(checks.length)h+=mm.length?`<div class="err">${mm.length} of ${checks.length} sheet TOTAL rows do not match the recalculated balance (sheet row ${mm.map(c=>c.row).join(', ')}). Please review before sharing.</div>`:`<div class="okb">All ${checks.length} sheet TOTAL rows match the recalculated balances.</div>`;
+ if(T.some(t=>t.credit<0||t.debit<0))h+='<div class="warn">Negative amounts (refunds) were found and are included as negative values.</div>';
+ if(y*12+m===first.y*12+first.m&&!startBal&&!T.some(t=>t.kind==='carry'))h+='<div class="warn">No carried-over funds found for the first month. The opening balance is assumed to be Rp 0. Confirm it in Settings if different.</div>';
+ const r=calc(y,m);if(!r.inc.length&&!r.exp.length)h+='<div class="warn">No transactions are recorded for '+per(y,m)+'. The report will show only the opening balance.</div>';
+ return{h,block}}
+let cur=null;
+function gen(){const y=+$('#ry').value,m=+$('#rm').value;LS.s('fund_period',[y,m]);LS.s('fund_names',{c:$('#cn').value,t:$('#tn').value});
+ const v=vsum(y,m);$('#vs').innerHTML=v.h;if(v.block){$('#repBox').style.display='none';cur=null;return}
+ const r=calc(y,m),cn=$('#cn').value||'Class',tn=$('#tn').value,P=per(y,m),gd=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+ const st=`During ${P}, the class fund received a total income of ${R(r.ti)} and recorded total expenses of ${R(r.te)}.`+(r.carry?` Carried-over funds of ${R(r.carry)} were added to the opening balance.`:'')+` The remaining class fund balance at the end of the month was ${R(r.close)}.`;
+ const wa=`*CLASS FUND – MONTHLY FINANCIAL REPORT*\n*${cn}*\n*Reporting Period: ${P}*\n\nHere is the financial summary for this month:\n\nOpening Balance: ${R(r.open)}\nTotal Income: ${R(r.ti)}\nTotal Expenses: ${R(r.te)}\n\n*Closing Balance: ${R(r.close)}*\n\nThank you to all parents for your continued support and contributions to our class activities!`;
+ cur={r,cn,tn,P,gd,st,wa};
+ const sub=(t,n,tot,g,l)=>`<h3>${t}</h3><p>${n} transaction(s) · Total ${R(tot)}</p>`+(g.length?'<div class="wrap"><table><tr><th>Category</th><th class="n">Count</th><th class="n">Amount</th></tr>'+g.map(x=>`<tr><td>${x.cat}</td><td class="n">${x.n}</td><td class="n">${R(x.s)}</td></tr>`).join('')+'</table></div>':'<p>No transactions.</p>')+(l.length?'<details open><summary>Details</summary><div class="wrap"><table>'+l.map(t=>`<tr><td>${t.date}</td><td>${esc(dsc(t))}</td><td class="n">${R(t.credit||t.debit)}</td></tr>`).join('')+'</table></div></details>':'');
+ $('#repOut').innerHTML=`<h2>CLASS FUND – MONTHLY FINANCIAL REPORT</h2><p><b>${esc(cn)}</b><br>Reporting period: ${P}<br>Generated: ${gd}${tn?'<br>Treasurer: '+esc(tn):''}</p>
+ <h3>Financial Summary</h3><table><tr><th>Description</th><th class="n">Amount</th></tr><tr><td>Opening Balance</td><td class="n">${R(r.open)}</td></tr><tr><td>Total Income</td><td class="n">${R(r.ti)}</td></tr><tr><td>Total Expenses</td><td class="n">${R(r.te)}</td></tr><tr><td><b>Closing Balance</b></td><td class="n"><b>${R(r.close)}</b></td></tr></table>`
+ +sub('Income Summary',r.inc.length,r.ti,r.gi,r.inc)+sub('Expense Summary',r.exp.length,r.te,r.ge,r.exp)+`<h3>Monthly Financial Statement</h3><p>${st}</p>`;
+ $('#wa').value=wa;$('#repBox').style.display='block'}
+function pdf(){if(!cur)return;const{r,cn,tn,P,gd,st}=cur,d=new jspdf.jsPDF({unit:'mm',format:'a4'});let y=18;
+ d.setFontSize(15);d.text('CLASS FUND – MONTHLY FINANCIAL REPORT',105,y,{align:'center'});d.setFontSize(10);y+=8;
+ d.text([cn,'Reporting period: '+P,'Generated: '+gd].concat(tn?['Treasurer: '+tn]:[]),14,y);y+=18+(tn?5:0);
+ const at=(head,body,al)=>{d.autoTable({startY:y,head:[head],body,theme:'grid',styles:{fontSize:9},headStyles:{fillColor:[111,157,207]},columnStyles:al});y=d.lastAutoTable.finalY+7};
+ const hd=t=>{if(y>260){d.addPage();y=18}d.setFontSize(11);d.text(t,14,y);y+=3};
+ hd('Financial Summary');at(['Description','Amount'],[['Opening Balance',R(r.open)],['Total Income',R(r.ti)],['Total Expenses',R(r.te)],['Closing Balance',R(r.close)]],{1:{halign:'right'}});
+ [['Income Summary',r.gi,r.inc,r.ti,'credit'],['Expense Summary',r.ge,r.exp,r.te,'debit']].forEach(([t,g,l,tot,k])=>{hd(t+' ('+l.length+' transactions, '+R(tot)+')');
+  if(g.length)at(['Category','Count','Amount'],g.map(x=>[x.cat,x.n,R(x.s)]),{1:{halign:'right'},2:{halign:'right'}});
+  if(l.length)at(['Date','Description','Amount'],l.map(x=>[x.date,dsc(x),R(x[k])]),{2:{halign:'right'}})});
+ hd('Monthly Financial Statement');d.setFontSize(10);d.text(d.splitTextToSize(st,180),14,y+3);
+ d.save('Class-Fund-Report-'+P.replace(' ','-')+'.pdf')}
+function xl(){if(!cur)return;const{r,cn,P,gd}=cur,w=XLSX.utils.book_new(),L=(a,k)=>[['Date','Description','Category','Amount (IDR)']].concat(a.map(t=>[t.date,dsc(t),t.cat,t[k]]));
+ XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['CLASS FUND – MONTHLY FINANCIAL REPORT'],[cn],['Reporting period',P],['Generated',gd],[],['Description','Amount (IDR)'],['Opening Balance',r.open],['Total Income',r.ti],['Total Expenses',r.te],['Closing Balance',r.close],[],['Income by category','Count','Amount (IDR)']].concat(r.gi.map(x=>[x.cat,x.n,x.s])).concat([[],['Expenses by category','Count','Amount (IDR)']],r.ge.map(x=>[x.cat,x.n,x.s]))),'Monthly Summary');
+ XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet(L(r.inc,'credit')),'Income Details');XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet(L(r.exp,'debit')),'Expense Details');
+ XLSX.writeFile(w,'Class-Fund-Report-'+P.replace(' ','-')+'.xlsx')}
+function copy(){const t=$('#wa').value;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).catch(()=>{$('#wa').select();document.execCommand('copy')}).then?.(()=>{});toast('WhatsApp summary copied');}
+function dlcsv(){const q=v=>'"'+String(v).replace(/"/g,'""')+'"',rows=[['Date','Credit','Debit','Transaction Details','Notes']].concat(T.map(t=>[t.date,t.credit||'-',t.debit||'-',t.desc,t.notes]));
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'}));a.download='class-fund-ledger.csv';a.click()}
+function addEntry(){const d=$('#ad').value,a=parseFloat($('#aa').value),ds=$('#ads').value.trim();
+ if(!d||!ds||!(a>0))return toast('Please enter a date, description and an amount above zero');
+ const p=pDate(d),k=$('#at').value,e={id:Date.now(),date:d,y:p[0],m:p[1],credit:k==='credit'?a:0,debit:k==='debit'?a:0,desc:ds,notes:$('#an').value,src:'manual'};
+ LS.s('fund_entries',manual().concat(e));rebuild(manual());renderAll();['#ads','#aa','#an'].forEach(s=>$(s).value='');toast('Entry added')}
+/* ---------- init ---------- */
+tabs();startBal=LS.g('fund_sb',0);hideNames=LS.g('fund_hn',false);
+$('#sb').value=startBal;$('#hn').checked=hideNames;$('#url').value=LS.g('fund_url','');
+const nm=LS.g('fund_names',{c:'Grade 3 Olifant',t:''});$('#cn').value=nm.c;$('#tn').value=nm.t;$('#ad').valueAsDate=new Date();
+['#q','#fm','#ft'].forEach(s=>$(s).oninput=txList);
+$('#gen').onclick=gen;$('#bpdf').onclick=pdf;$('#bxl').onclick=xl;$('#bpr').onclick=()=>window.print();$('#bwa').onclick=copy;$('#dlcsv').onclick=dlcsv;$('#addb').onclick=addEntry;
+$('#file').onchange=e=>e.target.files[0]&&fromFile(e.target.files[0]);
+$('#save').onclick=()=>{LS.s('fund_url',$('#url').value.trim());if($('#url').value.trim())fromUrl($('#url').value.trim());else toast('Please paste the published CSV link')};
+$('#prefs').onclick=()=>{startBal=parseFloat($('#sb').value)||0;hideNames=$('#hn').checked;LS.s('fund_sb',startBal);LS.s('fund_hn',hideNames);renderAll();toast('Preferences saved')};
+rebuild(manual());renderAll();if(LS.g('fund_url',''))fromUrl(LS.g('fund_url',''));
+</script></body></html>
